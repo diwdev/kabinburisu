@@ -85,6 +85,8 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
   // useMyLocationForNewPin/confirmDraftPin ด้านล่าง: แก้ปัญหา GPS ไม่แม่นยำ
   // แล้วปักหมุดผิดตำแหน่งไปเลยโดยไม่มีขั้นตอนตรวจสอบก่อน)
   const draftMarkerRef = useRef<Marker | null>(null);
+  // หมุดชั่วคราวจากการค้นหา (พิกัด/ชื่อสถานที่) — ดู flyTo() ด้านล่าง
+  const searchMarkerRef = useRef<Marker | null>(null);
 
   const [mapReady, setMapReady] = useState(false);
   const [pinsById, setPinsById] = useState<Map<string, MergedPin>>(new Map());
@@ -309,6 +311,8 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
     return () => {
       draftMarkerRef.current?.remove();
       draftMarkerRef.current = null;
+      searchMarkerRef.current?.remove();
+      searchMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -394,8 +398,20 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
     setPlacingPin(false);
   }
 
+  /**
+   * ใช้กับทั้งค้นหาจากพิกัดและค้นหาจากชื่อสถานที่ — ปักหมุดสีน้ำเงินไว้ที่จุด
+   * ที่ค้นหา (แยกสีจากหมุดขอความช่วยเหลือสีแดง/หมุดร่าง GPS) เพื่อให้เทียบ
+   * ตำแหน่งด้วยตาได้ง่าย เช่น เอาไว้เช็คว่าพิกัดที่บันทึกในระบบตรงกับที่ระบบ
+   * วาดบนแผนที่จริงไหม
+   */
   function flyTo(lat: number, lng: number) {
-    mapRef.current?.flyTo({ center: [lng, lat], zoom: 15 });
+    const map = mapRef.current;
+    if (!map) return;
+    searchMarkerRef.current?.remove();
+    searchMarkerRef.current = new Marker({ color: "#2563eb" })
+      .setLngLat([lng, lat])
+      .addTo(map);
+    map.flyTo({ center: [lng, lat], zoom: 16 });
   }
 
   const selectedPin = selectedPinId ? pinsById.get(selectedPinId) ?? null : null;
