@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/*
+ * เว็บนี้ออกแบบเป็นธีมสว่างล้วน (header/ปุ่ม/ฟอร์มทั้งหมด hardcode สีขาว/เทาอ่อน
+ * ไว้ตายตัว ไม่มีหน้าไหนรองรับ dark mode จริงจัง) โค้ด dark mode เดิมที่ติดมาจาก
+ * create-next-app (สลับสีตาม prefers-color-scheme) ถูกเอาออกไปแล้ว เพราะมันทำให้
+ * เบราว์เซอร์/มือถือที่เปิด dark mode ของระบบ render ช่องกรอกฟอร์ม (input/textarea/
+ * select) ด้วยสีพื้นหลัง-ตัวอักษรที่เบราว์เซอร์เลือกเอง (บางเครื่องได้ตัวอักษรสีเข้ม
+ * บนพื้นเข้ม อ่านไม่เห็นเลย) เพราะ element เหล่านี้ไม่ได้กำหนดสีไว้ตายตัวในแต่ละ
+ * component — แก้ที่นี่จุดเดียวให้ครอบคลุมทุกช่องกรอกในเว็บ กันไม่ให้เกิดซ้ำเวลาเพิ่ม
+ * ฟอร์มใหม่แล้วลืมใส่สีเอง
+ */
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -12,15 +22,16 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+input,
+textarea,
+select {
+  color-scheme: light;
+  background-color: #ffffff;
+  color: #171717;
 }
