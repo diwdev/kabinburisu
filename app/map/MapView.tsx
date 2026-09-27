@@ -195,6 +195,14 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
       center: [MAP_CENTER.lng, MAP_CENTER.lat],
       zoom: DEFAULT_ZOOM,
       attributionControl: { customAttribution: attributionHtml },
+      // MapLibre GL JS มีบั๊กที่รู้จักกันอยู่แล้ว (maplibre/maplibre-gl-js#5772,
+      // #7278) คือไม่ส่ง header Referer/Origin ไปกับ request ดึง style/tile ใน
+      // บาง browser/สถานการณ์ ทำให้ MapTiler เห็นเป็น "unknown origin" แล้วตอบ
+      // 403 "Key usage restricted" ทั้งที่ Allowed HTTP Origins ตั้งค่าถูกแล้ว
+      // (เกิดเฉพาะ browser จริง จำลองผ่าน curl ไม่เจอ) แก้โดยกำหนด referrerPolicy
+      // เองตรงนี้ตามที่ทีม MapLibre แนะนำ — "origin" ส่งแค่โดเมนของเรา ไม่ส่ง
+      // path เต็ม เพียงพอให้ MapTiler ยืนยัน origin ได้ ไม่ต้องเปิดเผยข้อมูลเกินจำเป็น
+      transformRequest: (url) => ({ url, referrerPolicy: "origin" }),
     });
     mapRef.current = map;
 
