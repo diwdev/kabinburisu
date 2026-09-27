@@ -9,9 +9,7 @@ import {
   addProtocol,
   setWorkerUrl,
   type StyleSpecification,
-  type GeoJSONSource,
   type MapMouseEvent,
-  type MapLayerMouseEvent,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -65,15 +63,31 @@ function matchesFilter(pin: MergedPin, filter: MapFilter): boolean {
   }
 }
 
-function pinsToGeoJson(pins: MergedPin[]): GeoJSON.FeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: pins.map((pin) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [pin.lng, pin.lat] },
-      properties: { id: pin.id, status: pin.status },
-    })),
-  };
+/**
+ * สร้าง DOM element สำหรับหมุดแสดงคำขอความช่วยเหลือ 1 อัน (วงกลมสีตามสถานะ
+ * ขอบขาว) — ใช้กับ MapLibre `Marker` โดยตรง แทนระบบเดิม (GeoJSON source +
+ * `cluster: true` + circle layer) ที่พิสูจน์แล้วว่า render ตำแหน่งผิดจริงใน
+ * production (ตรวจสอบแล้วว่าข้อมูลใน state ถูกต้อง 100% ตรงกับฐานข้อมูล แต่
+ * ตัว circle layer วาดผิดตำแหน่งไปหลายร้อยเมตรอย่างสม่ำเสมอ — สาเหตุที่แท้จริง
+ * ยังไม่ทราบแน่ชัด แต่ marker แบบ DOM ที่ใช้กับหมุดค้นหา/หมุดร่าง GPS ไม่เคย
+ * ผิดพลาดเลยตลอดการทดสอบ จึงเปลี่ยนมาใช้กลไกเดียวกันเพื่อความถูกต้อง ซึ่งสำคัญ
+ * มากสำหรับเครื่องมือช่วยเหลือฉุกเฉิน)
+ *
+ * ข้อแลกเปลี่ยนที่ยอมรับ: ไม่มี clustering อัตโนมัติเหมือนเดิมแล้ว (แสดงหมุดทุก
+ * อันตรงๆ ไม่รวมกลุ่มตอนซูมออก) — ยอมรับได้เพราะจำนวนหมุดจริงของเครื่องมือนี้
+ * (ระดับอำเภอเดียว) ไม่น่าจะเยอะพอที่ clustering จะจำเป็นในเร็วๆ นี้ ถ้าจำนวน
+ * หมุดโตขึ้นมากในอนาคตค่อยกลับมาทำ clustering แบบใหม่ที่ตรวจสอบแล้วว่าแม่นยำ
+ */
+function createPinMarkerElement(status: PinStatus): HTMLDivElement {
+  const el = document.createElement("div");
+  el.style.width = "18px";
+  el.style.height = "18px";
+  el.style.borderRadius = "50%";
+  el.style.backgroundColor = PIN_STATUS_COLORS[status] ?? PIN_STATUS_COLORS.active;
+  el.style.border = "2px solid #ffffff";
+  el.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
+  el.style.cursor = "pointer";
+  return el;
 }
 
 export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
@@ -87,6 +101,9 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
   const draftMarkerRef = useRef<Marker | null>(null);
   // หมุดชั่วคราวจากการค้นหา (พิกัด/ชื่อสถานที่) — ดู flyTo() ด้านล่าง
   const searchMarkerRef = useRef<Marker | null>(null);
+  // หมุดขอความช่วยเหลือทั้งหมดที่แสดงอยู่บนแผนที่ตอนนี้ (id หมุด → Marker) —
+  // ดู syncPinMarkers effect ด้านล่าง
+  const pinMarkersRef = useRef<Map<string, Marker>>(new Map());
 
   const [mapReady, setMapReady] = useState(false);
   const [pinsById, setPinsById] = useState<Map<string, MergedPin>>(new Map());
@@ -188,20 +205,6 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
     // รอบนี้ไป ไม่งั้นข้อมูลเก่า/หยาบกว่าจะไปทับข้อมูลใหม่ที่ถูกต้องแล้ว (root cause
     // ของบั๊กพิกัดเพี้ยนที่เจอจริงในโปรดักชัน — ดูคอมเมนต์ด้านบน)
     if (myGeneration !== fetchGenerationRef.current) return;
-    // TODO(debug, remove once the pin-location mismatch bug is confirmed
-    // fixed): dump exactly what ends up in state per pin, so we can see
-    // directly whether the bug is upstream (wrong lat/lng already here) or
-    // downstream (correct here, but rendered wrong on the map layer).
-    console.log(
-      "[fetchPins] merged pins:",
-      Array.from(merged.values()).map((p) => ({
-        id: p.id,
-        lat: p.lat,
-        lng: p.lng,
-        isFull: p.isFull,
-        status: p.status,
-      }))
-    );
     setPinsById(merged);
   }, []);
 
@@ -277,112 +280,70 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
     );
 
     map.on("load", () => {
-      map.addSource("pins", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-        cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 50,
-      });
-
-      map.addLayer({
-        id: "clusters",
-        type: "circle",
-        source: "pins",
-        filter: ["has", "point_count"],
-        paint: {
-          "circle-color": "#1d4ed8",
-          "circle-radius": ["step", ["get", "point_count"], 16, 10, 22, 30, 28],
-          "circle-opacity": 0.85,
-        },
-      });
-
-      map.addLayer({
-        id: "cluster-count",
-        type: "symbol",
-        source: "pins",
-        filter: ["has", "point_count"],
-        layout: { "text-field": ["get", "point_count_abbreviated"], "text-size": 12 },
-        paint: { "text-color": "#ffffff" },
-      });
-
-      map.addLayer({
-        id: "unclustered-point",
-        type: "circle",
-        source: "pins",
-        filter: ["!", ["has", "point_count"]],
-        paint: {
-          "circle-color": [
-            "match",
-            ["get", "status"],
-            "active",
-            PIN_STATUS_COLORS.active,
-            "stale",
-            PIN_STATUS_COLORS.stale,
-            "helped",
-            PIN_STATUS_COLORS.helped,
-            PIN_STATUS_COLORS.closed,
-          ],
-          "circle-radius": 9,
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#ffffff",
-        },
-      });
-
-      map.on("click", "clusters", (e: MapLayerMouseEvent) => {
-        const features = map.queryRenderedFeatures(e.point, { layers: ["clusters"] });
-        const clusterId = features[0]?.properties?.cluster_id;
-        const source = map.getSource("pins") as GeoJSONSource | undefined;
-        if (clusterId == null || !source) return;
-        source.getClusterExpansionZoom(clusterId).then((zoom) => {
-          const geometry = features[0].geometry;
-          if (geometry.type !== "Point") return;
-          map.easeTo({ center: geometry.coordinates as [number, number], zoom });
-        });
-      });
-
-      map.on("click", "unclustered-point", (e: MapLayerMouseEvent) => {
-        const id = e.features?.[0]?.properties?.id;
-        if (id) setSelectedPinId(id);
-      });
-
-      for (const layer of ["clusters", "unclustered-point"]) {
-        map.on("mouseenter", layer, () => (map.getCanvas().style.cursor = "pointer"));
-        map.on("mouseleave", layer, () => (map.getCanvas().style.cursor = ""));
-      }
-
-      // ปักหมุดใหม่: ต้องคลิกบนแผนที่นอกเหนือจากตัวหมุด/คลัสเตอร์ที่มีอยู่แล้ว
+      // ปักหมุดใหม่: หมุดที่มีอยู่แล้วเป็น DOM Marker ของตัวเอง (ดู
+      // syncPinMarkers) ซึ่งจะรับคลิกไปเองก่อนถึง canvas อยู่แล้ว จึง click
+      // handler นี้จะไม่ทำงานถ้าคลิกโดนหมุดเดิมพอดี ไม่ต้อง query ซ้ำเอง
       map.on("click", (e: MapMouseEvent) => {
         if (!placingPinRef.current) return;
-        const hit = map.queryRenderedFeatures(e.point, {
-          layers: ["clusters", "unclustered-point"],
-        });
-        if (hit.length > 0) return;
         onMapPickRef.current?.(e.lngLat.lat, e.lngLat.lng);
       });
 
       setMapReady(true);
     });
 
+    const pinMarkers = pinMarkersRef.current;
     return () => {
       draftMarkerRef.current?.remove();
       draftMarkerRef.current = null;
       searchMarkerRef.current?.remove();
       searchMarkerRef.current = null;
+      for (const marker of pinMarkers.values()) marker.remove();
+      pinMarkers.clear();
       map.remove();
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Push filtered pins into the map source whenever data/filter changes ----
+  // ---- Sync pin markers (DOM Marker per pin, see createPinMarkerElement)
+  // whenever the filtered pin list changes — replaces the old GeoJSON
+  // source + circle-layer approach entirely (see createPinMarkerElement's
+  // comment for why). Diffs against the existing marker set instead of
+  // clear-and-rebuild every time so dragging/panning doesn't flicker. ----
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const source = map.getSource("pins") as GeoJSONSource | undefined;
-    if (!source) return;
+    const markers = pinMarkersRef.current;
     const filtered = Array.from(pinsById.values()).filter((p) => matchesFilter(p, filter));
-    source.setData(pinsToGeoJson(filtered));
+    const filteredIds = new Set(filtered.map((p) => p.id));
+
+    // ลบหมุดที่ไม่อยู่ในรายการที่กรองแล้วอีกต่อไป (ถูกลบ/ปิด/ไม่ตรง filter)
+    for (const [id, marker] of markers) {
+      if (!filteredIds.has(id)) {
+        marker.remove();
+        markers.delete(id);
+      }
+    }
+
+    // เพิ่ม/อัปเดตตำแหน่งและสีของหมุดแต่ละอัน
+    for (const pin of filtered) {
+      const existing = markers.get(pin.id);
+      if (existing) {
+        existing.setLngLat([pin.lng, pin.lat]);
+        existing.getElement().style.backgroundColor =
+          PIN_STATUS_COLORS[pin.status] ?? PIN_STATUS_COLORS.active;
+      } else {
+        const el = createPinMarkerElement(pin.status);
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          setSelectedPinId(pin.id);
+        });
+        const marker = new Marker({ element: el })
+          .setLngLat([pin.lng, pin.lat])
+          .addTo(map);
+        markers.set(pin.id, marker);
+      }
+    }
   }, [pinsById, filter, mapReady]);
 
   // ---- "+" ปักหมุดขอความช่วยเหลือ ----
