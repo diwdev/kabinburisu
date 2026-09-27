@@ -33,7 +33,6 @@ import { MAP_CENTER, DEFAULT_ZOOM, PIN_STATUS_COLORS } from "@/lib/constants";
 import type { MergedPin, PinStatus } from "@/lib/types";
 import FilterBar, { type MapFilter } from "@/components/FilterBar";
 import CoordinateSearchBox from "@/components/CoordinateSearchBox";
-import PlaceSearchBox from "@/components/PlaceSearchBox";
 import PinDetailSheet from "@/components/PinDetailSheet";
 import PinForm from "@/components/PinForm";
 
@@ -367,7 +366,8 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
       <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex flex-col items-start gap-2 px-3">
         <FilterBar value={filter} onApply={setFilter} />
         <CoordinateSearchBox onFound={flyTo} />
-        <PlaceSearchBox onSelect={flyTo} />
+        {/* PlaceSearchBox ซ่อนไว้ก่อนตามที่ผู้ใช้ขอ (ยังไม่ได้ใช้งานจริง) —
+            เก็บ component/import ไว้เผื่อเปิดใช้ทีหลัง แค่ไม่ render ตอนนี้ */}
       </div>
 
       {placingPin && (

@@ -19,6 +19,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // public/ is static assets only, never lintable source — needed since
+    // scripts/copy-maplibre-worker.mjs (postinstall) copies large minified
+    // .mjs library files into public/maplibre/, which ESLint was otherwise
+    // trying to parse as our own code (1000+ bogus warnings).
+    "public/**",
   ]),
 ]);
 
