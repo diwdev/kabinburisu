@@ -131,7 +131,12 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
     const supabase = createClient();
     const merged = new Map<string, MergedPin>();
 
-    const { data: publicRows } = await supabase.from("pins_public").select("*");
+    const { data: publicRows, error: publicError } = await supabase
+      .from("pins_public")
+      .select("*");
+    if (publicError) {
+      console.error("[fetchPins] pins_public query failed:", publicError);
+    }
     for (const row of publicRows ?? []) {
       merged.set(row.id, {
         id: row.id,
@@ -149,7 +154,16 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
 
     // Anon has no grant on `pins` at all — this errors for them, which is
     // expected and fine; we just fall back to the coarse view above.
-    const { data: fullRows } = await supabase.from("pins").select("*");
+    // Logged loudly (not silently swallowed) because a real rescue-unit
+    // account seeing this error unexpectedly would otherwise silently fall
+    // back to coarse/rounded coordinates with zero visible indication why —
+    // exactly the failure mode being actively debugged right now.
+    const { data: fullRows, error: fullError } = await supabase
+      .from("pins")
+      .select("*");
+    if (fullError) {
+      console.error("[fetchPins] pins (full) query failed:", fullError);
+    }
     for (const row of fullRows ?? []) {
       merged.set(row.id, {
         id: row.id,
@@ -174,6 +188,20 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
     // รอบนี้ไป ไม่งั้นข้อมูลเก่า/หยาบกว่าจะไปทับข้อมูลใหม่ที่ถูกต้องแล้ว (root cause
     // ของบั๊กพิกัดเพี้ยนที่เจอจริงในโปรดักชัน — ดูคอมเมนต์ด้านบน)
     if (myGeneration !== fetchGenerationRef.current) return;
+    // TODO(debug, remove once the pin-location mismatch bug is confirmed
+    // fixed): dump exactly what ends up in state per pin, so we can see
+    // directly whether the bug is upstream (wrong lat/lng already here) or
+    // downstream (correct here, but rendered wrong on the map layer).
+    console.log(
+      "[fetchPins] merged pins:",
+      Array.from(merged.values()).map((p) => ({
+        id: p.id,
+        lat: p.lat,
+        lng: p.lng,
+        isFull: p.isFull,
+        status: p.status,
+      }))
+    );
     setPinsById(merged);
   }, []);
 
