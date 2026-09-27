@@ -103,7 +103,31 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
 
   // ---- Fetch pins: merge pins_public (coarse, everyone) with pins (full
   // detail, RLS-scoped to own rows / all rows for rescue units) — PLAN.md §2/§6 ----
+  //
+  // Root cause of a real bug found in production: fetchPins() gets triggered
+  // more than once in quick succession on page load (auth state resolves in
+  // 2 steps — getUser() then onAuthStateChange — and the effect below that
+  // calls fetchPins depends on `user`, so it re-fires each time). With no
+  // guard against out-of-order responses, an EARLIER call made before login
+  // finished (its `pins` query effectively empty/anon, so it only had the
+  // coarse pins_public rounded coordinates) could resolve AFTER a LATER call
+  // made once login completed (with the real, exact coordinates) — silently
+  // overwriting the correct precise location with a rounded ~1.1km-fuzzed
+  // one. This exactly matched what was reported: the same pin, same account,
+  // rendering at a location off by a few hundred meters — the same order of
+  // magnitude as pins_public's 2-decimal-place rounding — inconsistently
+  // across devices/reloads, which is the signature of a timing race, not a
+  // deterministic data or rendering bug (confirmed separately: a direct DB
+  // query showed only one correct coordinate stored, and a coordinate-search
+  // marker using the same value always rendered in the right place).
+  //
+  // Fix: a generation counter — only the result of the most recently
+  // *started* fetchPins() call is ever applied; any older call that resolves
+  // late is discarded instead of clobbering fresher data.
+  const fetchGenerationRef = useRef(0);
+
   const fetchPins = useCallback(async () => {
+    const myGeneration = ++fetchGenerationRef.current;
     const supabase = createClient();
     const merged = new Map<string, MergedPin>();
 
@@ -146,6 +170,10 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
       });
     }
 
+    // มี fetchPins() รอบใหม่กว่าเริ่มไปแล้วระหว่างที่รอบนี้ยังโหลดอยู่ — ทิ้งผลลัพธ์
+    // รอบนี้ไป ไม่งั้นข้อมูลเก่า/หยาบกว่าจะไปทับข้อมูลใหม่ที่ถูกต้องแล้ว (root cause
+    // ของบั๊กพิกัดเพี้ยนที่เจอจริงในโปรดักชัน — ดูคอมเมนต์ด้านบน)
+    if (myGeneration !== fetchGenerationRef.current) return;
     setPinsById(merged);
   }, []);
 
