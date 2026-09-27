@@ -197,6 +197,9 @@ alter table public.profiles enable row level security;
 alter table public.profiles force row level security;
 
 -- ระดับ 2 (เจ้าของ) + ระดับ 3 (หน่วยกู้ภัย): เห็นข้อมูลเต็มบนตารางหลัก
+-- >>> แก้ไขแล้วโดย supabase/migrations/0007_broaden_pin_visibility.sql (ดู §5
+-- ส่วน "อัปเดต 2026-09-27") — policy นี้ไม่ใช้แล้วในระบบจริง เก็บไว้ตรงนี้เป็น
+-- ประวัติเฉยๆ ว่าตอนแรกออกแบบไว้แบบไหน <<<
 create policy pins_select_owner_or_rescue on public.pins for select
   using (auth.uid() = requester_id or public.is_rescue_unit());
 
@@ -288,6 +291,10 @@ select cron.schedule(
 - `app/auth/callback/route.ts` แลก OAuth code เป็น session แล้ว redirect ไป `/map`
 - **ห้ามเชื่อ role field ที่มาจาก client เด็ดขาด** ฝั่ง UI จะเรียก Postgres RPC `get_my_role()` (ที่ wrap `is_rescue_unit()`) เพื่อใช้ตัดสินใจว่าจะ*แสดง*ปุ่มไหนเท่านั้น ส่วนการกระทำที่มีสิทธิ์พิเศษจริงๆ ทุกอันจะถูก RLS ตรวจซ้ำเสมอ ไม่ว่า UI จะแสดงอะไรไว้ก็ตาม
 - **การดูแล allowlist หน่วยกู้ภัย (admin คัดเลือกเอง ไม่มีสมัครเอง)**: ในคืนเปิดตัว ผู้ใช้ (diwdev.th@gmail.com ในฐานะ admin คนเดียว) จะจัดการตาราง `rescue_units` โดยตรงผ่าน Supabase Studio Table Editor/SQL editor — ไม่ต้องเขียนโค้ดเลย ทางเลือกเสริมในภายหลังคือทำหน้า `app/admin/rescue-units/page.tsx` — หน้าที่ล็อกไว้โดยเทียบอีเมลผู้ใช้ที่ login กับ `process.env.ADMIN_EMAIL`, ใช้ service-role client เฉพาะภายใน Server Action เท่านั้น (ไม่ถูกส่งไปที่ client bundle เด็ดขาด และป้องกันด้วย package `server-only` เพื่อให้ build fail ถ้ามีการ import ผิดที่ไปยัง client โดยไม่ตั้งใจ) — เพื่อเพิ่ม/ลบอีเมลใน allowlist โดยไม่ต้องแตะ SQL
+
+**อัปเดต 2026-09-27 — ขยายสิทธิ์เห็นข้อมูลเต็มให้ผู้ใช้ login ทุกคน (ตัดสินใจร่วมกับผู้ใช้ ยอมรับความเสี่ยงแล้ว)**: เดิมมีแค่เจ้าของหมุด + หน่วยกู้ภัยที่ยืนยันแล้วเห็นเบอร์โทร/พิกัดแม่นยำของหมุดคนอื่นได้ (ระดับ 2/3 ใน §2) ตอนนี้เปลี่ยนเป็น **ผู้ใช้ที่ login ด้วย Google แล้วทุกคน** (ไม่ต้องอยู่ใน allowlist `rescue_units`) เห็นข้อมูลเต็มของทุกหมุดได้ — ทำผ่าน `supabase/migrations/0007_broaden_pin_visibility.sql` ซึ่งแทนที่ policy `pins_select_owner_or_rescue` เดิมด้วย `pins_select_authenticated` (`using (auth.uid() is not null)`) เปลี่ยนแค่สิทธิ์**เห็นข้อมูล**เท่านั้น — สิทธิ์**แก้ไข/ลบ**หมุด (จำกัดเจ้าของ) และ**เปลี่ยนสถานะ/ปักธง**หมุด (จำกัดหน่วยกู้ภัย) ยังเหมือนเดิมทุกอย่าง ไม่แตะ ฝั่งโค้ดเว็บไม่ต้องแก้เลย เพราะ `PinDetailSheet.tsx` โชว์เบอร์โทร/พิกัดตาม `pin.isFull` (ผลจาก RLS query ล้วนๆ) อยู่แล้ว ไม่มี role-based gating ซ้อนสำหรับการแสดงผล
+
+**ความเสี่ยงที่ยอมรับแล้ว**: ใครก็ตามที่สมัคร Google account ได้ (ฟรี ไม่ผ่านการคัดกรอง) จะเห็นเบอร์โทร+ที่อยู่แม่นยำของผู้ประสบภัยทุกคนในระบบได้ทันทีที่ login ไม่ใช่แค่หน่วยกู้ภัยที่ admin คัดเลือกผ่าน `rescue_units` อีกต่อไป — เป็นการลดระดับความเป็นส่วนตัวที่ตั้งใจไว้ตอนแรก (§2 เดิม) โดยตั้งใจ เพื่อให้ชุมชน/อาสาสมัครทั่วไปช่วยกันได้กว้างขึ้นในสถานการณ์ฉุกเฉิน
 
 ## 6. รายละเอียดฟีเจอร์
 
