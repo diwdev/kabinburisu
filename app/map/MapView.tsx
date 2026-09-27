@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Map as MapLibreMap,
+  Marker,
   GeolocateControl,
   NavigationControl,
   addProtocol,
@@ -80,12 +81,18 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
   const mapRef = useRef<MapLibreMap | null>(null);
   const placingPinRef = useRef(false);
   const onMapPickRef = useRef<((lat: number, lng: number) => void) | null>(null);
+  // หมุดร่างจาก GPS ที่ยังไม่ยืนยัน — ลากปรับตำแหน่งได้ก่อนกดยืนยันจริง (ดู
+  // useMyLocationForNewPin/confirmDraftPin ด้านล่าง: แก้ปัญหา GPS ไม่แม่นยำ
+  // แล้วปักหมุดผิดตำแหน่งไปเลยโดยไม่มีขั้นตอนตรวจสอบก่อน)
+  const draftMarkerRef = useRef<Marker | null>(null);
 
   const [mapReady, setMapReady] = useState(false);
   const [pinsById, setPinsById] = useState<Map<string, MergedPin>>(new Map());
   const [filter, setFilter] = useState<MapFilter>("all");
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [placingPin, setPlacingPin] = useState(false);
+  const [draftActive, setDraftActive] = useState(false);
+  const [draftAccuracy, setDraftAccuracy] = useState<number | null>(null);
   const [newPinCoords, setNewPinCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [editingPin, setEditingPin] = useState<MergedPin | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -300,6 +307,8 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
     });
 
     return () => {
+      draftMarkerRef.current?.remove();
+      draftMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -332,18 +341,52 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
     setPlacingPin(true);
   }
 
+  /**
+   * ปุ่ม "ใช้ตำแหน่งของฉัน" — เดิมปักหมุดตรงจากพิกัด GPS ทันทีโดยไม่มีขั้นตอน
+   * ตรวจสอบ ทำให้ถ้า GPS/WiFi-positioning ของอุปกรณ์ไม่แม่นยำ (พบได้บ่อยใน
+   * ต่างจังหวัดที่ฐานข้อมูล WiFi ของ Google บางกว่าเมือง หรือเปิดจาก desktop
+   * ที่ไม่มี GPS จริง) หมุดจะเพี้ยนจากตำแหน่งจริงได้โดยผู้ใช้ไม่รู้ตัว — ตอนนี้
+   * แสดงเป็นหมุด "ร่าง" ที่ลากปรับตำแหน่งได้ก่อน พร้อมโชว์ค่าความแม่นยำจาก
+   * pos.coords.accuracy ให้ผู้ใช้ตัดสินใจเองว่าต้องปรับไหม แล้วค่อยกดยืนยัน
+   */
   function useMyLocationForNewPin() {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setNewPinCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const { latitude, longitude, accuracy } = pos.coords;
         placingPinRef.current = false;
         setPlacingPin(false);
-        mapRef.current?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 15 });
+
+        const map = mapRef.current;
+        if (!map) return;
+        draftMarkerRef.current?.remove();
+        const marker = new Marker({ color: "#dc2626", draggable: true })
+          .setLngLat([longitude, latitude])
+          .addTo(map);
+        draftMarkerRef.current = marker;
+        setDraftAccuracy(accuracy);
+        setDraftActive(true);
+        map.flyTo({ center: [longitude, latitude], zoom: 16 });
       },
       () => setLoginHint(false),
       { enableHighAccuracy: true, timeout: 10_000 }
     );
+  }
+
+  /** ยืนยันตำแหน่งหมุดร่าง (หลังลากปรับถ้าจำเป็น) แล้วเปิดฟอร์มปักหมุดต่อ */
+  function confirmDraftPin() {
+    const marker = draftMarkerRef.current;
+    if (!marker) return;
+    const { lat, lng } = marker.getLngLat();
+    setNewPinCoords({ lat, lng });
+    cancelDraftPin();
+  }
+
+  function cancelDraftPin() {
+    draftMarkerRef.current?.remove();
+    draftMarkerRef.current = null;
+    setDraftActive(false);
+    setDraftAccuracy(null);
   }
 
   function cancelPlacingPin() {
@@ -383,6 +426,37 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
             <button onClick={cancelPlacingPin} className="text-xs text-zinc-300 underline">
               ยกเลิก
             </button>
+          </div>
+        </div>
+      )}
+
+      {draftActive && (
+        <div className="pointer-events-none absolute inset-x-0 top-1/3 z-10 flex justify-center px-4">
+          <div className="pointer-events-auto flex max-w-full flex-col items-center gap-2 rounded-xl bg-zinc-900/90 px-4 py-3 text-center text-sm text-white shadow-lg">
+            <span>
+              ลากหมุดสีแดงเพื่อปรับตำแหน่งให้ตรงก่อนยืนยัน
+              {draftAccuracy != null && (
+                <>
+                  {" "}
+                  — GPS แม่นยำประมาณ ±{Math.round(draftAccuracy)} เมตร
+                  {draftAccuracy > 100 && " (ควรตรวจสอบตำแหน่งให้ดี)"}
+                </>
+              )}
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={confirmDraftPin}
+                className="rounded-full bg-red-600 px-4 py-1.5 text-sm font-bold text-white"
+              >
+                ยืนยันตำแหน่งนี้
+              </button>
+              <button
+                onClick={cancelDraftPin}
+                className="rounded-full bg-white/20 px-4 py-1.5 text-sm"
+              >
+                ยกเลิก
+              </button>
+            </div>
           </div>
         </div>
       )}
