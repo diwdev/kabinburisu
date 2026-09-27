@@ -29,8 +29,18 @@
  * ทำให้หน้าเลื่อน/สไลด์เผยพื้นหลังดำระหว่างเปลี่ยนหน้าไปมา (เข้าใจผิดว่าเป็น
  * layout พัง/ไม่ responsive ทั้งที่จริงคือ browser navigation gesture)
  */
+/*
+ * ป้องกันหน้าล้นแนวนอนบนมือถือทั่วเว็บ (safety net) — เจอจริงจาก FilterBar
+ * (flex ที่ไม่ยอมหดตัว, ตัวเลือกยาวๆ อย่าง "ต้องการความช่วยเหลือทางการแพทย์"
+ * ดัน select ให้กว้างเกินจอ) และ PinForm modal (flex item ที่ w-full ไม่ยอม
+ * หดกว่าเนื้อหาข้างในโดย default ตาม min-width:auto ของ flexbox) ทั้งสองจุด
+ * แก้ที่ต้นเหตุแล้ว (flex-wrap/min-w-0/truncate) แต่เก็บ overflow-x:hidden ไว้
+ * ที่นี่ด้วยเป็นเซฟตี้เน็ต กันไม่ให้ element ตัวอื่นในอนาคตสร้างช่องว่างเลื่อน
+ * ขวามือแบบเดียวกันซ้ำอีกโดยไม่ตั้งใจ
+ */
 html {
   overscroll-behavior-x: none;
+  overflow-x: hidden;
 }
 
 body {
@@ -38,6 +48,7 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   overscroll-behavior-x: none;
+  overflow-x: hidden;
 }
 
 input,

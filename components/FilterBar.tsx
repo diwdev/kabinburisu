@@ -28,7 +28,7 @@ export default function FilterBar({ value, onApply }: FilterBarProps) {
   const [pending, setPending] = useState<MapFilter>(value);
 
   return (
-    <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-white px-3 py-2 shadow-lg">
+    <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-2 rounded-2xl bg-white px-3 py-2 shadow-lg">
       <label className="text-xs font-medium text-zinc-500" htmlFor="map-filter">
         แสดงผล
       </label>
@@ -36,7 +36,7 @@ export default function FilterBar({ value, onApply }: FilterBarProps) {
         id="map-filter"
         value={pending}
         onChange={(e) => setPending(e.target.value as MapFilter)}
-        className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-sm text-zinc-800"
+        className="min-w-0 max-w-[60vw] truncate rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-sm text-zinc-800"
       >
         {OPTIONS.map((opt) => (
           <option key={opt.value} value={opt.value}>
