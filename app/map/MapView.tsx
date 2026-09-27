@@ -6,12 +6,26 @@ import {
   GeolocateControl,
   NavigationControl,
   addProtocol,
+  setWorkerUrl,
   type StyleSpecification,
   type GeoJSONSource,
   type MapMouseEvent,
   type MapLayerMouseEvent,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+
+/**
+ * MapLibre GL v6 is ESM-only and its worker relatively imports a large
+ * sibling chunk (maplibre-gl-shared.mjs) that Next.js/Turbopack's bundler
+ * does not emit correctly next to the auto-detected worker URL — the worker
+ * then fails to load in production (map renders base tiles but no roads/
+ * labels, since vector tile decoding needs the worker). Fixed by serving
+ * both files ourselves from public/maplibre/ (copied on `postinstall` by
+ * scripts/copy-maplibre-worker.mjs) and pointing MapLibre at that path
+ * explicitly. Must run once, before any Map is constructed — module scope
+ * (not inside the component) guarantees that.
+ */
+setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 import { Protocol as PMTilesProtocol } from "pmtiles";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
