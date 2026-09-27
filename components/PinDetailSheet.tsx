@@ -176,6 +176,22 @@ export default function PinDetailSheet({
                   {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}
                 </dd>
               </div>
+              <div className="flex items-center justify-between">
+                <dt className="text-zinc-500">นำทาง</dt>
+                <dd>
+                  {/* Google's official Maps URL scheme (ไม่ใช่ deep link เฉพาะแพลตฟอร์ม)
+                      — บนมือถือเปิดแอป Google Maps ให้เองถ้าติดตั้งไว้ พร้อมพิกัดปลายทาง
+                      ให้กด "Start"/"เริ่มนำทาง" เอง, ถ้าไม่มีแอปจะ fallback เปิดเว็บแทน */}
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white"
+                  >
+                    เปิด Google Maps นำทาง
+                  </a>
+                </dd>
+              </div>
             </>
           )}
         </dl>
