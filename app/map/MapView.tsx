@@ -438,8 +438,15 @@ export default function MapView({ mapStyle, attributionHtml }: MapViewProps) {
       <div ref={containerRef} className="h-full w-full" />
 
       {/* แถบควบคุมด้านบน: ตัวกรอง + ค้นหา (pointer-events-none บน wrapper กัน
-          ไม่ให้บังการลากแผนที่ในพื้นที่ว่าง) */}
-      <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex flex-col items-start gap-2 px-3">
+          ไม่ให้บังการลากแผนที่ในพื้นที่ว่าง)
+          right-14 กันไม่ให้กล่องนี้ขยายล้ำเข้าไปทับปุ่ม NavigationControl/
+          GeolocateControl ของ MapLibre ที่ตั้งไว้มุม top-right (บั๊กที่เจอจริง:
+          บนจอแคบ FilterBar ต้องขึ้น 2 บรรทัดแล้วกล่องสีขาวขยายกว้างจนไปบังปุ่ม
+          GPS ไว้ทั้งอัน เพราะ wrapper นี้มี z-10 สูงกว่าปุ่มของ MapLibre เสมอ —
+          กดตรงไหนก็โดน FilterBar ดักไว้ก่อนถึงปุ่ม GPS ที่ซ่อนอยู่ข้างล่าง แก้โดย
+          บังคับให้ wrapper ห้ามล้ำเข้าโซนปุ่มเด็ดขาด ถ้าเนื้อหายาวเกินก็แค่ตัด
+          ขึ้นบรรทัดใหม่แทน ของเดิมมี flex-wrap/max-w-full รองรับอยู่แล้ว) */}
+      <div className="pointer-events-none absolute left-0 right-14 top-3 z-10 flex flex-col items-start gap-2 px-3">
         <FilterBar value={filter} onApply={setFilter} />
         <CoordinateSearchBox onFound={flyTo} />
         {/* PlaceSearchBox ซ่อนไว้ก่อนตามที่ผู้ใช้ขอ (ยังไม่ได้ใช้งานจริง) —
